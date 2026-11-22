@@ -5,7 +5,7 @@ import { Capacitor } from "@capacitor/core";
 import { store, type Channel, type Playlist } from "./core/store";
 import { createPlayer, WeaPlayer, type PlayerState } from "./player/player";
 import { icon } from "./ui/icons";
-import { barChart, drawLogo, drawerMotion, drawerStep, enterView, hudMotion, holdToConfirm, moveTabIndicator, osd, revealTiles, shimmer, showToast, slapSticker, splitFlap, tuning } from "./ui/fx";
+import { drawLogo, drawerMotion, drawerStep, enterView, hudMotion, holdToConfirm, moveTabIndicator, osd, restick, revealTiles, shimmer, showToast, slapSticker, splitFlap, tuning } from "./ui/fx";
 import { focusFirst, move } from "./ui/spatial";
 
 type View = "home" | "live" | "favorites" | "recent" | "lists";
@@ -166,49 +166,184 @@ function render() {
 
 /* ---------- views ---------- */
 
+/* ---------- home: the zapping stage ---------- */
+
+type HomeTab = "recent" | "fav" | "cats" | "lists";
+type StageItem =
+  | { kind: "channel"; ch: Channel; list: Channel[] }
+  | { kind: "cat"; name: string; count: number }
+  | { kind: "list"; pl: Playlist };
+const home = { tab: undefined as HomeTab | undefined, item: undefined as StageItem | undefined, key: "", timer: 0 };
+
+function ago(at: number) {
+  const min = Math.round((Date.now() - at) / 60000);
+  if (min < 1) return "recién";
+  if (min < 60) return `hace ${min} min`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `hace ${h} h`;
+  const d = Math.round(h / 24);
+  return d === 1 ? "ayer" : `hace ${d} días`;
+}
+
+const count = (n: number) => n.toLocaleString("es-CL");
+
 function renderHome() {
   if (!store.playlists.length) return renderWelcome();
-  const last = store.history[0]?.channel;
-  main.innerHTML = `
-    <header class="page-head"><h1>¿Qué vemos hoy?</h1></header>
-    ${last ? `<button class="resume" id="resume" data-autofocus aria-label="Seguir viendo ${esc(last.name)}">
-        <span class="resume-art">${logo(last, "resume-logo")}${chNumber(last) ? `<span class="tile-num" aria-hidden="true">${esc(chNumber(last))}</span>` : ""}</span>
-        <span class="resume-text"><strong>${esc(last.name)}</strong><span>${esc(last.group ?? "")}</span></span>
-        <span class="resume-play">${icon.play}</span>
-      </button>` : ""}
-    ${weekShelf()}
-    <section class="shelf"><h2>Favoritos</h2><div class="row" id="fav-row"></div></section>
-    <section class="shelf"><h2>Recientes</h2><div class="row" id="recent-row"></div></section>
-    <section class="shelf"><h2>Tus listas</h2><div class="lists-row" id="lists-row">${store.playlists
-      .map((p) => `<button class="chip-list${p.id === store.active?.id ? " active" : ""}" data-id="${p.id}"><strong>${esc(p.name)}</strong><span>${p.count.toLocaleString("es-CL")} canales</span></button>`)
-      .join("")}</div></section>`;
-  const chart = document.getElementById("week-chart");
-  if (chart) {
-    const week = store.week();
-    barChart(chart, week.map((d) => ({
-      label: d.date.toLocaleDateString("es-CL", { weekday: "narrow" }).toUpperCase(),
-      value: d.minutes,
-      title: `${d.date.toLocaleDateString("es-CL", { weekday: "long", day: "numeric" })}: ${duration(d.minutes)}`,
-    })), week.length - 1);
+  const tabs: { id: HomeTab; label: string; n: number }[] = [
+    { id: "recent", label: "Recientes", n: store.history.length },
+    { id: "fav", label: "Favoritos", n: store.favorites.length },
+    { id: "cats", label: "Categorías", n: store.categories().length },
+    { id: "lists", label: "Listas", n: store.playlists.length },
+  ];
+  if (!home.tab || !tabs.find((t) => t.id === home.tab)!.n) {
+    home.tab = store.history.length ? "recent" : store.favorites.length ? "fav" : "cats";
   }
-  if (last) $("resume").onclick = () => void play(last, store.history.map((h) => h.channel));
-  grid($("fav-row"), store.favorites.slice(0, 24), "Marca canales con la estrella y aparecen aquí.");
-  grid($("recent-row"), store.history.slice(0, 24).map((h) => h.channel), "Lo que veas quedará aquí.");
-  $("lists-row").onclick = (e) => {
-    const b = (e.target as HTMLElement).closest<HTMLElement>("[data-id]");
-    if (b) void store.selectPlaylist(b.dataset.id).then(() => go("live"));
+  const total = store.week().reduce((a, d) => a + d.minutes, 0);
+  main.innerHTML = `
+    <section class="stage" aria-label="Seguir viendo">
+      <header class="stage-head">
+        <h1>¿Qué vemos hoy?</h1>
+        ${total ? `<p class="stage-week">${duration(total)} de tele esta semana</p>` : ""}
+      </header>
+      <div class="stage-sticker" id="stage-sticker">
+        <span class="stage-num" id="stage-num" role="img"></span>
+        <span class="stage-plate" id="stage-plate"></span>
+      </div>
+      <div class="stage-actions" id="stage-actions"></div>
+    </section>
+    <section class="dock">
+      <div class="dock-tabs" id="dock-tabs" role="tablist" aria-label="Qué mostrar">${tabs
+        .map((t) => `<button class="dock-tab" role="tab" data-tab="${t.id}" aria-selected="${t.id === home.tab}">${t.label} <span>${count(t.n)}</span></button>`)
+        .join("")}</div>
+      <div class="row dock-row" id="dock-row" role="tabpanel"></div>
+    </section>`;
+  home.key = "";
+  setStage(firstItem(), false);
+  renderDock();
+  const tabsEl = $("dock-tabs");
+  // Remote: moving across the tabs switches the row below, no extra OK press.
+  tabsEl.addEventListener("focusin", (e) => selectTab((e.target as HTMLElement).closest<HTMLElement>("[data-tab]")));
+  tabsEl.addEventListener("click", (e) => selectTab((e.target as HTMLElement).closest<HTMLElement>("[data-tab]")));
+  const row = $("dock-row");
+  row.addEventListener("focusin", (e) => previewTile(e.target as HTMLElement));
+  row.addEventListener("pointerover", (e) => { if ((e as PointerEvent).pointerType === "mouse") previewTile(e.target as HTMLElement); });
+  $("stage-actions").onclick = (e) => stageAction((e.target as HTMLElement).closest<HTMLElement>("[data-go]")?.dataset.go);
+}
+
+/** What the stage shows before anything is focused: the last channel, else a favourite, else the list. */
+function firstItem(): StageItem {
+  const last = store.history[0]?.channel;
+  if (last) return { kind: "channel", ch: last, list: store.history.map((h) => h.channel) };
+  if (store.favorites[0]) return { kind: "channel", ch: store.favorites[0], list: store.favorites };
+  return { kind: "list", pl: store.active ?? store.playlists[0] };
+}
+
+function selectTab(b: HTMLElement | null) {
+  if (!b || b.dataset.tab === home.tab) return;
+  home.tab = b.dataset.tab as HomeTab;
+  $("dock-tabs").querySelectorAll<HTMLElement>("[data-tab]").forEach((t) => t.setAttribute("aria-selected", String(t === b)));
+  renderDock();
+}
+
+function renderDock() {
+  const row = $("dock-row");
+  const tabs = $("dock-tabs");
+  moveTabIndicator(tabs, tabs.querySelector<HTMLElement>(`[data-tab="${home.tab}"]`));
+  row.scrollLeft = 0;
+  if (home.tab === "recent") return grid(row, store.history.map((h) => h.channel), "Lo que veas quedará aquí.");
+  if (home.tab === "fav") return grid(row, store.favorites, "Marca canales con la estrella y aparecen aquí.");
+  const items = home.tab === "cats"
+    ? store.categories().map((c) => `<button class="tile big-count" data-cat="${esc(c.name)}"><span class="tile-count">${count(c.count)}</span><span class="tile-name">${esc(c.name)}</span><span class="tile-meta">canales</span></button>`)
+    : store.playlists.map((p) => `<button class="tile big-count${p.id === store.active?.id ? " is-playing" : ""}" data-pl="${p.id}"><span class="tile-count">${count(p.count)}</span><span class="tile-name">${esc(p.name)}</span><span class="tile-meta">${p.id === store.active?.id ? "lista activa" : p.remote ? "enlace" : "archivo"}</span></button>`);
+  row.innerHTML = items.join("");
+  revealTiles([...row.children]);
+  row.onclick = (e) => {
+    const b = (e.target as HTMLElement).closest<HTMLElement>("[data-cat], [data-pl]");
+    if (b?.dataset.cat !== undefined) openCategory(b.dataset.cat);
+    else if (b?.dataset.pl) void store.selectPlaylist(b.dataset.pl).then(() => go("live"));
   };
+}
+
+function openCategory(name: string) {
+  ui.category = name;
+  ui.query = "";
+  go("live");
+}
+
+/** Focus or hover on a tile puts it on the stage; a short pause keeps fast zipping with the remote smooth. */
+function previewTile(el: HTMLElement) {
+  const t = el.closest<HTMLElement>(".tile");
+  if (!t) return;
+  clearTimeout(home.timer);
+  home.timer = window.setTimeout(() => {
+    if (t.dataset.cat !== undefined) {
+      const c = store.categories().find((x) => x.name === t.dataset.cat);
+      if (c) setStage({ kind: "cat", name: c.name, count: c.count }, true);
+    } else if (t.dataset.pl) {
+      const pl = store.playlists.find((p) => p.id === t.dataset.pl);
+      if (pl) setStage({ kind: "list", pl }, true);
+    } else {
+      const ch = ui.context[Number(t.dataset.i)];
+      if (ch) setStage({ kind: "channel", ch, list: ui.context }, true);
+    }
+  }, 90);
+}
+
+function setStage(item: StageItem, animated: boolean) {
+  const key = item.kind === "channel" ? `c:${item.ch.url}` : item.kind === "cat" ? `g:${item.name}` : `l:${item.pl.id}`;
+  if (key === home.key) return;
+  home.key = key;
+  home.item = item;
+  const plate = $("stage-plate");
+  let num: string, actions: string;
+  if (item.kind === "channel") {
+    const ch = item.ch;
+    const seen = store.history.find((h) => h.channel.url === ch.url);
+    const fav = store.isFavorite(ch.url);
+    num = chNumber(ch) || "TV";
+    plate.className = "stage-plate";
+    plate.innerHTML = `${logo(ch, "stage-logo")}<strong>${esc(ch.name)}</strong><em>${esc([ch.group, seen ? `lo viste ${ago(seen.at)}` : fav ? "en tus favoritos" : ""].filter(Boolean).join(" · "))}</em>`;
+    actions = `<button class="btn ghost${fav ? " on" : ""}" data-go="fav" aria-pressed="${fav}">${fav ? icon.starFill : icon.star}<span>${fav ? "En favoritos" : "Favorito"}</span></button>
+      <button class="btn primary stage-go" data-go="play" data-autofocus>${icon.play}<span>Ver ahora</span></button>`;
+  } else if (item.kind === "cat") {
+    num = count(item.count).replace(/\D/g, "");
+    plate.className = "stage-plate no-logo";
+    plate.innerHTML = `<strong>${esc(item.name)}</strong><em>${count(item.count)} canales en esta categoría</em>`;
+    actions = `<button class="btn primary stage-go" data-go="cat" data-autofocus>${icon.live}<span>Ver canales</span></button>`;
+  } else {
+    const active = item.pl.id === store.active?.id;
+    num = String(item.pl.count);
+    plate.className = "stage-plate no-logo";
+    plate.innerHTML = `<strong>${esc(item.pl.name)}</strong><em>${count(item.pl.count)} canales · ${active ? "lista activa" : `actualizada ${new Date(item.pl.updatedAt).toLocaleDateString("es-CL")}`}</em>`;
+    actions = `<button class="btn primary stage-go" data-go="list" data-autofocus>${icon.live}<span>${active ? "Ver canales" : "Abrir lista"}</span></button>`;
+  }
+  splitFlap($("stage-num"), num);
+  $("stage-actions").innerHTML = actions;
+  $("stage-actions").querySelector(".stage-go")?.setAttribute("aria-label", `${$("stage-actions").querySelector(".stage-go span")!.textContent} ${plate.querySelector("strong")!.textContent}`);
+  if (animated) restick($("stage-sticker"));
+}
+
+function stageAction(act?: string) {
+  const item = home.item;
+  if (!act || !item) return;
+  if (item.kind === "channel" && act === "play") return void play(item.ch, item.list);
+  if (item.kind === "channel" && act === "fav") {
+    return void store.toggleFavorite(item.ch).then((on) => {
+      toast(on ? "Agregado a favoritos" : "Quitado de favoritos");
+      home.key = "";
+      setStage(item, false);
+      $("stage-actions").querySelector<HTMLElement>("[data-go=fav]")?.focus();
+      const tab = $("dock-tabs").querySelector("[data-tab=fav] span");
+      if (tab) tab.textContent = count(store.favorites.length);
+      if (home.tab === "fav") renderDock();
+    });
+  }
+  if (item.kind === "cat") return openCategory(item.name);
+  if (item.kind === "list") void store.selectPlaylist(item.pl.id).then(() => go("live"));
 }
 
 function duration(min: number) {
   return min >= 60 ? `${Math.floor(min / 60)} h ${min % 60} min` : `${min} min`;
-}
-
-/** Bklit-style chart of the week, only once something has been watched. */
-function weekShelf() {
-  const total = store.week().reduce((a, d) => a + d.minutes, 0);
-  if (!total) return "";
-  return `<section class="shelf week"><h2>Tu semana: ${duration(total)} de tele</h2><div id="week-chart" class="week-chart"></div></section>`;
 }
 
 function brandMark(cls: string) {
@@ -358,20 +493,21 @@ function renderBar() {
   f.setAttribute("aria-label", fav ? "Quitar de favoritos" : "Agregar a favoritos");
   f.innerHTML = `${fav ? icon.starFill : icon.star}<span>${fav ? "En favoritos" : "Favorito"}</span>`;
   // Volume only on Windows: the TV has its remote, the phone a swipe on the right half.
+  // On Windows every control shows its keyboard shortcut on hover.
+  const tip = (label: string, key: string) => (device.kind === "desktop" ? ` title="${label} (${key})"` : "");
   const volumeControls = device.kind === "desktop" ? `
     <span class="bar-gap"></span>
-    <button class="pbtn" data-act="mute" aria-label="${muted ? "Activar sonido" : "Silenciar"}">${muted ? icon.mute : icon.volume}</button>
-    <input class="vol" type="range" min="0" max="100" value="${volume}" aria-label="Volumen" data-act="vol">
-    <button class="pbtn desktop-only" data-act="full" aria-label="Pantalla completa">${icon.full}</button>` : "";
+    <button class="pbtn" data-act="mute" aria-label="${muted ? "Activar sonido" : "Silenciar"}"${tip(muted ? "Activar sonido" : "Silenciar", "M")}>${muted ? icon.mute : icon.volume}</button>
+    <input class="vol" type="range" min="0" max="100" value="${volume}" aria-label="Volumen" data-act="vol"${tip("Volumen", "+ / − o la rueda del mouse")}>
+    <button class="pbtn desktop-only" data-act="full" aria-label="Pantalla completa"${tip("Pantalla completa", "F o doble clic")}>${icon.full}</button>` : "";
+  // No close button: Android has its own Back, Windows the arrow before the channel sticker.
   $("osd-bar").innerHTML = `
-    <button class="pbtn" data-act="channels" aria-label="Lista de canales" aria-expanded="${!$("drawer").hidden}">${icon.list}</button>
-    <button class="pbtn" data-act="prev" aria-label="Canal anterior">${icon.up}</button>
-    <button class="pbtn big" data-act="toggle" aria-label="${paused ? "Reproducir" : "Pausa"}" data-autofocus>${paused ? icon.play : icon.pause}</button>
-    <button class="pbtn" data-act="next" aria-label="Canal siguiente">${icon.down}</button>
-    ${device.pip ? `<button class="pbtn" data-act="pip" aria-label="Imagen en imagen">${icon.pip}</button>` : ""}
-    ${volumeControls}
-    <span class="bar-gap"></span>
-    <button class="pbtn" data-act="close" aria-label="Cerrar reproductor">${icon.close}</button>`;
+    <button class="pbtn" data-act="channels" aria-label="Lista de canales" aria-expanded="${!$("drawer").hidden}"${tip("Lista de canales", "L")}>${icon.list}</button>
+    <button class="pbtn" data-act="prev" aria-label="Canal anterior"${tip("Canal anterior", "Re Pág")}>${icon.up}</button>
+    <button class="pbtn big" data-act="toggle" aria-label="${paused ? "Reproducir" : "Pausa"}"${tip(paused ? "Reproducir" : "Pausa", "Espacio")} data-autofocus>${paused ? icon.play : icon.pause}</button>
+    <button class="pbtn" data-act="next" aria-label="Canal siguiente"${tip("Canal siguiente", "Av Pág")}>${icon.down}</button>
+    ${device.pip ? `<button class="pbtn" data-act="pip" aria-label="Imagen en imagen"${tip("Imagen en imagen", "P")}>${icon.pip}</button>` : ""}
+    ${volumeControls}`;
 }
 $("osd").addEventListener("click", (e) => {
   const act = (e.target as HTMLElement).closest<HTMLElement>("[data-act]")?.dataset.act;
@@ -423,11 +559,26 @@ function keepFocus(act: string) {
   $("osd").querySelector<HTMLElement>(`[data-act="${act}"]`)?.focus();
 }
 
-async function setVolume(volume: number, muted: boolean) {
+async function setVolume(volume: number, muted: boolean, refocus = true) {
   player.setVolume(volume, muted);
   const wasMute = store.settings.muted !== muted;
   await store.setSettings({ volume, muted });
-  if (wasMute) { renderBar(); keepFocus("mute"); }
+  if (wasMute) {
+    const focused = (document.activeElement as HTMLElement | null)?.dataset.act;
+    renderBar();
+    if (refocus) keepFocus("mute");
+    else if (focused) keepFocus(focused);
+  }
+}
+
+/** Windows: mouse wheel and +/− change the volume in steps, shown with the same indicator as the phone swipe. */
+function nudgeVolume(delta: number) {
+  const volume = Math.min(100, Math.max(0, store.settings.volume + delta));
+  void setVolume(volume, volume === 0 && store.settings.muted, false);
+  const slider = $("osd-bar").querySelector<HTMLInputElement>(".vol");
+  if (slider) slider.value = String(volume);
+  showHud("volume", volume / 100);
+  hideHud();
 }
 
 async function play(ch: Channel, context: Channel[]) {
@@ -695,6 +846,7 @@ function back(): boolean {
     return true;
   }
   if (!$("player").hidden) {
+    if (document.fullscreenElement) { void document.exitFullscreen(); return true; }
     if ($("player").classList.contains("osd-on") && ui.state === "playing") {
       hideOsd();
       (document.activeElement as HTMLElement | null)?.blur();
@@ -736,9 +888,16 @@ document.addEventListener("keydown", (e) => {
     if ((!osdOn && k === "ArrowLeft") || (k.toLowerCase() === "l" && !typing)) { e.preventDefault(); return openDrawer(); }
     if (k === "ChannelUp" || k === "PageUp" || (!osdOn && k === "ArrowUp")) { e.preventDefault(); return zap(-1); }
     if (k === "ChannelDown" || k === "PageDown" || (!osdOn && k === "ArrowDown")) { e.preventDefault(); return zap(1); }
-    if (k === "MediaPlayPause" || (k === " " && !(e.target as HTMLElement).closest("button"))) { e.preventDefault(); return action("toggle"); }
-    if (k.toLowerCase() === "m" && !typing && device.kind === "desktop") return action("mute");
-    if (k.toLowerCase() === "f" && !typing) return action("full");
+    // Space always pauses, even with a button focused (Enter is what presses buttons).
+    if (k === "MediaPlayPause" || k === " " || (k.toLowerCase() === "k" && !typing)) { e.preventDefault(); return action("toggle"); }
+    if (!typing && device.kind === "desktop") {
+      const key = k.toLowerCase();
+      if (key === "m") return action("mute");
+      if (key === "f") return action("full");
+      if (key === "p" && device.pip) return action("pip");
+      if (k === "+" || k === "=" || k === "AudioVolumeUp") { e.preventDefault(); return nudgeVolume(5); }
+      if (k === "-" || k === "AudioVolumeDown") { e.preventDefault(); return nudgeVolume(-5); }
+    }
     if (!osdOn && (k === "Enter" || k.startsWith("Arrow"))) { e.preventDefault(); return showOsd(true); }
     showOsd();
   }
@@ -758,7 +917,16 @@ $("player").addEventListener("click", (e) => {
     $("player").classList.contains("osd-on") && ui.state === "playing" ? hideOsd() : showOsd();
   }
 });
-video.addEventListener("dblclick", () => action("full"));
+// Windows: double-click the picture for fullscreen, the wheel for volume.
+$("player").addEventListener("dblclick", (e) => {
+  if (device.kind !== "desktop" || (e.target as HTMLElement).closest("button, input, #drawer")) return;
+  action("full");
+});
+$("player").addEventListener("wheel", (e) => {
+  if (device.kind !== "desktop" || (e.target as HTMLElement).closest("#drawer") || !e.deltaY) return;
+  e.preventDefault();
+  nudgeVolume(e.deltaY < 0 ? 5 : -5);
+}, { passive: false });
 
 video.addEventListener("enterpictureinpicture", () => hideOsd());
 video.addEventListener("leavepictureinpicture", () => showOsd());
@@ -786,6 +954,8 @@ if (player.native) {
   device.pip = info.pip;
 }
 document.documentElement.dataset.device = device.kind;
+$("osd-back").innerHTML = icon.back;
+$("osd-back").hidden = device.kind !== "desktop";
 
 await store.load();
 go("home");

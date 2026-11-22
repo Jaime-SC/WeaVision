@@ -393,7 +393,24 @@ html.native-video .player video { display: none; }
 .osd-on { cursor: default; }
 .player:not(.osd-on) { cursor: none; }
 
-.osd-top { grid-row: 1; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.osd-top { grid-row: 1; display: flex; align-items: flex-start; gap: 12px; }
+.osd-top .zap { margin-right: auto; }
+/* Windows: the way back to the app sits before the channel sticker (Android has its own Back). */
+.osd-back {
+  flex: none;
+  display: grid; place-items: center;
+  width: 56px; height: 56px;
+  border-radius: 50%;
+  background: rgba(17, 48, 31, 0.92);
+  color: var(--grey);
+  box-shadow: 0 20px 40px -20px rgba(0, 0, 0, 0.7);
+  transition: background 0.2s, transform 0.25s var(--ease-out);
+}
+.osd-back[hidden] { display: none; }
+.osd-back svg { width: 26px; height: 26px; transition: transform 0.25s var(--ease-out); }
+.osd-back:hover { background: var(--green-up); }
+.osd-back:hover svg { transform: translateX(-3px); }
+.osd-back:focus-visible { background: var(--grey); color: var(--green); transform: scale(1.06); outline-offset: 2px; }
 .zap { display: inline-flex; align-items: stretch; gap: 0; max-width: 100%; min-width: 0; }
 /* Favourite: its own button in the top corner, apart from the transport bar. */
 .osd-fav {
@@ -704,3 +721,112 @@ html.pip .osd, html.pip .drawer, html.pip .hud, html.pip .player-status, html.pi
 .drawer .tile:focus-visible { transform: scale(1.025); }
 .drawer .empty { padding: 8px; }
 
+
+/* ---------- home: the zapping stage ---------- */
+
+/* The player's zap sticker, blown up: the channel in focus owns the top of the screen. */
+.stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto 1fr auto;
+  gap: clamp(12px, 1.6vw, 20px);
+  min-height: min(52dvh, 520px);
+  padding: clamp(18px, 2.6vw, 36px);
+  margin-bottom: clamp(14px, 2vw, 26px);
+  border-radius: var(--r-l);
+  background: radial-gradient(120% 100% at 16% 32%, var(--green-up), var(--green-deep) 78%);
+}
+.stage-head { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: baseline; gap: 8px 24px; flex-wrap: wrap; }
+.stage-head h1 { font-size: clamp(1.6rem, 2.8vw, 2.6rem); font-weight: 800; letter-spacing: -0.03em; }
+.stage-week { margin: 0; font-weight: 700; color: var(--grey-soft); font-variant-numeric: tabular-nums; }
+.stage-sticker {
+  align-self: center;
+  justify-self: start;
+  display: inline-flex;
+  align-items: stretch;
+  max-width: 100%;
+  min-width: 0;
+  transform: rotate(-2.5deg);
+  transform-origin: 30% 50%;
+  box-shadow: 0 30px 60px -24px rgba(0, 0, 0, 0.7);
+  border-radius: var(--r-l);
+}
+.stage-num {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.04em;
+  min-width: 1.5em;
+  padding: 0.08em 0.28em;
+  border-radius: var(--r-l) 0 0 var(--r-l);
+  background: var(--red);
+  color: #fff;
+  font-size: clamp(4rem, 10vw, 10rem);
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.stage-plate {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-content: center;
+  align-items: center;
+  gap: 4px clamp(14px, 1.8vw, 24px);
+  padding: clamp(14px, 2vw, 28px) clamp(18px, 2.8vw, 42px);
+  border-radius: 0 var(--r-l) var(--r-l) 0;
+  background: var(--grey);
+  color: var(--green);
+}
+.stage-plate.no-logo { grid-template-columns: minmax(0, 1fr); }
+.stage-logo { grid-row: span 2; width: clamp(56px, 6vw, 96px); height: clamp(56px, 6vw, 96px); border-radius: var(--r-m); object-fit: contain; background: #fff; padding: 6px; }
+.stage-logo.logo-fallback { display: grid; place-items: center; background: var(--green); color: var(--grey); font-weight: 800; font-size: clamp(1.1rem, 1.8vw, 1.7rem); }
+.stage-plate strong { font-size: clamp(1.6rem, 3.6vw, 3.6rem); font-weight: 800; letter-spacing: -0.03em; line-height: 1.02; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; text-wrap: balance; }
+.stage-plate em { font-style: normal; font-weight: 600; color: #3d6652; font-size: clamp(0.92rem, 1.2vw, 1.2rem); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stage-plate em:empty { display: none; }
+.stage-actions { justify-self: end; display: flex; gap: 12px; flex-wrap: wrap; justify-content: flex-end; }
+.stage-actions .btn { min-height: 56px; font-size: 1.05rem; font-weight: 750; }
+.stage-actions .btn.ghost { background: rgb(17 48 31 / 0.7); }
+.stage-actions .btn.on svg { color: var(--red); }
+.stage-go { padding: 0 1.6em; }
+.stage-go svg { width: 1.1em; height: 1.1em; }
+
+/* One row below the stage; the tabs pick what it holds. */
+.dock-tabs { position: relative; display: flex; gap: 6px; overflow-x: auto; padding: 4px; margin: 0 -4px 10px; }
+.dock-tabs .tab-pill { border-radius: 999px; }
+.dock-tab {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  min-height: 48px;
+  padding: 0 18px;
+  border-radius: 999px;
+  font-weight: 700;
+  color: var(--grey-soft);
+  transition: color 0.2s;
+}
+.dock-tab span { font-weight: 600; font-variant-numeric: tabular-nums; opacity: 0.8; }
+.dock-tab:hover { color: var(--grey); }
+.dock-tab[aria-selected="true"] { color: var(--green); }
+.dock-row { grid-auto-columns: clamp(150px, 15vw, 220px); }
+.tile.big-count { align-content: start; min-height: 9.5rem; }
+.tile-count { font-size: clamp(1.8rem, 2.6vw, 2.6rem); font-weight: 800; letter-spacing: -0.03em; line-height: 1.1; font-variant-numeric: tabular-nums; margin-bottom: auto; }
+.tile.big-count .tile-name { margin-top: 1.2rem; }
+
+@media (max-width: 960px) {
+  .stage { min-height: 0; }
+  .stage-actions { justify-self: start; justify-content: flex-start; }
+}
+@media (max-width: 720px) {
+  .stage { padding: 18px 16px 20px; border-radius: var(--r-m); }
+  .stage-num { font-size: clamp(3rem, 17vw, 5rem); border-radius: var(--r-m) 0 0 var(--r-m); }
+  .stage-plate { border-radius: 0 var(--r-m) var(--r-m) 0; padding: 12px 16px; }
+  .stage-plate strong { font-size: 1.45rem; }
+  .stage-logo { display: none; }
+  .stage-plate { grid-template-columns: minmax(0, 1fr); }
+  .stage-actions { width: 100%; }
+  .stage-actions .btn { flex: 1; justify-content: center; }
+  .dock-row { grid-auto-columns: 42vw; }
+}

@@ -47,6 +47,17 @@ export function drawerStep(pane: HTMLElement, title: HTMLElement, forward: boole
   if (rows) animate([...pane.children].slice(0, 14), { x: [dx * 22, 0], opacity: [0, 1] }, { duration: 0.4, delay: stagger(0.022), ease: EASE_OUT });
 }
 
+/**
+ * Home stage: the channel sticker peels and slaps back on whenever the focused tile changes,
+ * like the zap sticker in the player; the number flips on its own (splitFlap).
+ */
+export function restick(sticker: HTMLElement) {
+  if (reduced()) return;
+  const plate = sticker.querySelector(".stage-plate");
+  animate(sticker, { rotate: [-7, -2.5], y: [-16, 0], scale: [1.05, 1] }, { type: "spring", stiffness: 520, damping: 22 });
+  if (plate) animate(plate, { x: [-20, 0], opacity: [0.2, 1] }, { duration: 0.34, ease: EASE_OUT });
+}
+
 /** Volume / brightness indicator: pops in with a spring, fades out when the finger lifts. */
 export function hudMotion(el: HTMLElement, show: boolean): Promise<unknown> {
   if (reduced()) return Promise.resolve();

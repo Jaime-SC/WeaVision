@@ -2,6 +2,18 @@
 
 Todos los cambios relevantes de WeaVision se registran aquí. Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y versionado [SemVer](https://semver.org/lang/es/).
 
+## [2.2.0] - 2026-11-22
+
+### Agregado
+- Inicio rediseñado como «pantalla de zapping»: el último canal aparece como un sticker gigante (número rojo que gira como paleta, logo, nombre y hace cuánto lo viste) con botones Ver ahora y Favorito. Debajo, una sola fila con pestañas Recientes, Favoritos, Categorías y Listas; al pasar por cada canal, categoría o lista, el sticker se despega y se vuelve a pegar con ella. Cabe en la pantalla de la TV sin bajar.
+- Windows: flecha para volver arriba a la izquierda, antes del número de canal.
+- Windows: doble clic sobre la imagen para pantalla completa y rueda del mouse para subir o bajar el volumen, con el mismo indicador que el gesto del celular.
+- Windows: atajos de teclado en el reproductor: Espacio o K pausa, M silencia, F pantalla completa, P imagen en imagen, + y − volumen, L lista de canales, Re Pág / Av Pág cambian de canal y Esc sale de pantalla completa o vuelve. Cada botón muestra su atajo al pasar el mouse.
+
+### Cambiado
+- La barra de reproducción ya no tiene el botón ✕: en Android se vuelve con el gesto o botón Atrás del sistema y en Android TV con el control remoto.
+- Espacio pausa o reanuda aunque haya un botón de la barra seleccionado.
+
 ## [2.1.0] - 2026-11-22
 
 ### Agregado

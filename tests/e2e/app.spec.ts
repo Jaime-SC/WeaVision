@@ -70,7 +70,7 @@ test("remote control: arrows move focus, OK plays, Back closes", async ({ page }
   await page.keyboard.press("Escape");
   await page.keyboard.press("Escape");
   await expect(page.locator("#player")).toBeHidden();
-  await page.getByRole("button", { name: "Favoritos" }).click();
+  await page.getByRole("button", { name: "Favoritos", exact: true }).click();
   await expect(page.locator("#grid .tile")).toHaveCount(1);
 });
 
@@ -112,4 +112,47 @@ test("channel list opens from its own button, also after turning the phone", asy
   await list.click();
   await expect(page.locator("#drawer")).toBeInViewport({ ratio: 0.9 });
   await expect(list).toHaveAttribute("aria-expanded", "true");
+});
+
+test("desktop player: back arrow up top, wheel volume, keyboard shortcuts", async ({ page }, info) => {
+  test.skip(info.project.name !== "tv", "Mouse and keyboard flow");
+  await page.route("http://example.com/**", (r) => r.abort());
+  await page.route("https://example.com/**", (r) => r.abort());
+  await importFixture(page);
+  await page.locator("#grid .tile").first().click();
+  await expect(page.getByText("No se pudo reproducir este canal")).toBeVisible({ timeout: 20000 });
+  // No close button in the bar; the way back is the arrow before the channel sticker.
+  await expect(page.locator("#osd-bar [data-act=close]")).toHaveCount(0);
+  await expect(page.locator(".osd-top").getByRole("button", { name: "Volver" })).toBeVisible();
+  const slider = page.getByLabel("Volumen");
+  const before = Number(await slider.inputValue());
+  await page.mouse.move(480, 270);
+  await page.mouse.wheel(0, 100);
+  await expect(slider).toHaveValue(String(Math.max(0, before - 5)));
+  await expect(page.locator("#hud")).toBeVisible();
+  await page.keyboard.press("+");
+  await expect(slider).toHaveValue(String(before));
+  await page.keyboard.press("m");
+  await expect(page.getByRole("button", { name: "Activar sonido" })).toBeVisible();
+  await page.locator(".osd-top").getByRole("button", { name: "Volver" }).click();
+  await expect(page.locator("#player")).toBeHidden();
+});
+
+test("home: the stage shows the last channel and the tabs switch the row", async ({ page }) => {
+  await page.route("http://example.com/**", (r) => r.abort());
+  await page.route("https://example.com/**", (r) => r.abort());
+  await importFixture(page);
+  await page.locator("#grid .tile").first().click();
+  await expect(page.locator("#player")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Inicio" }).click();
+  await expect(page.getByRole("heading", { name: "¿Qué vemos hoy?" })).toBeVisible();
+  await expect(page.locator("#stage-plate")).toContainText("Canal Deportes HD");
+  await page.getByRole("tab", { name: /^Categorías/ }).click();
+  await expect(page.locator("#dock-row .tile")).toHaveCount(6);
+  await page.locator("#dock-row .tile", { hasText: "Chile" }).hover();
+  await expect(page.locator("#stage-plate")).toContainText("2 canales en esta categoría");
+  await page.getByRole("button", { name: "Ver canales Chile" }).click();
+  await expect(page.locator("#grid .tile")).toHaveCount(2);
 });
