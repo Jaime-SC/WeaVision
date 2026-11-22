@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256"><title>WeaVision</title>
+  <!-- W drawn as two V antennas sharing the middle; ball tips -->
+  <g fill="none" stroke="#000" stroke-width="30" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M44 72 L92 196 L128 118 L164 196 L212 72"/>
+  </g>
+  <circle cx="44" cy="56" r="22"/>
+  <circle cx="212" cy="56" r="22"/>
+  <circle cx="128" cy="92" r="18"/>
+</svg>

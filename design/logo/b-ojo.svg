@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256"><title>WeaVision</title>
+  <!-- Almond eye; iris ring; pupil is a play triangle -->
+  <path fill="#000" fill-rule="evenodd" d="
+    M16 128 Q128 16 240 128 Q128 240 16 128 Z
+    M128 78 A50 50 0 1 0 128.01 78 Z"/>
+  <path fill="#000" d="M114 104 L114 152 L155.6 128 Z"/>
+</svg>

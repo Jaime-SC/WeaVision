@@ -1,0 +1,9 @@
+#EXTM3U
+#EXTINF:-1 tvg-chno="1" group-title="Ejemplo",Big Buck Bunny (HLS de prueba)
+https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8
+#EXTINF:-1 tvg-chno="2" group-title="Ejemplo",Apple Bipbop (HLS de prueba)
+https://devstreaming-cdn.apple.com/videos/streaming/examples/bipbop_16x9/bipbop_16x9_variant.m3u8
+#EXTINF:-1 tvg-chno="3" group-title="Ejemplo",Tears of Steel (HLS de prueba)
+https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8
+#EXTINF:-1 tvg-chno="4" group-title="Ejemplo",Sintel (MP4 de prueba)
+https://storage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4

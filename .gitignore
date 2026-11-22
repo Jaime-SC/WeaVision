@@ -1,0 +1,19 @@
+node_modules/
+dist/
+release/
+test-results/
+playwright-report/
+*.log
+.DS_Store
+Thumbs.db
+.env
+.env.*
+*.pem
+*.keystore
+*.jks
+.tmp_*
+android/local.properties
+design/logo/renders/
+
+# Test signing key for sideloaded updates (see android/app/build.gradle)
+!android/app/weavision.keystore

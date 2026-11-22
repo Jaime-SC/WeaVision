@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256"><title>WeaVision</title>
+  <!-- Antenna ears forming a V, screen as chat bubble with tail bottom-left, negative play triangle -->
+  <path fill="#000" fill-rule="evenodd" d="
+    M86 30 L128 72 L170 30 L184 44 L148 80 L190 80 Q230 80 230 120 L230 170 Q230 210 190 210 L104 210 L56 238 L64 210 Q26 206 26 170 L26 120 Q26 80 66 80 L108 80 L72 44 Z
+    M108 112 L108 180 L166 146 Z"/>
+</svg>

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256"><title>WeaVision</title>
+  <!-- "La tele del grupo": TV screen that is also a chat bubble; rabbit-ear antennas make the V of Vision -->
+  <g stroke="#000" stroke-width="22" stroke-linecap="round">
+    <path d="M128 84 L84 40 M128 84 L172 40"/>
+  </g>
+  <circle cx="80" cy="36" r="17"/>
+  <circle cx="176" cy="36" r="17"/>
+  <path fill="#000" fill-rule="evenodd" d="
+    M70 82 L186 82 Q232 82 232 128 L232 166 Q232 212 186 212 L112 212 L58 243 L66 213 Q24 204 24 166 L24 128 Q24 82 70 82 Z
+    M110 114 L110 180 Q110 188 117 184 L166 152 Q172 147 166 143 L117 110 Q110 106 110 114 Z"/>
+</svg>

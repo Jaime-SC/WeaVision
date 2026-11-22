@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#1B4532" />
+  <title>WeaVision</title>
+  <link rel="icon" href="/brand.svg" type="image/svg+xml" />
+</head>
+<body>
+  <div class="app" id="app">
+    <nav class="rail" aria-label="Secciones">
+      <svg class="rail-logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="WeaVision">
+  <path d="M48 76 L92 204 L128 124 L164 204 L208 76" fill="none" stroke="#e3e4e5" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle class="ball" cx="48" cy="56" r="24" fill="#ee4129"/><circle class="ball" cx="208" cy="56" r="24" fill="#ee4129"/>
+</svg>
+      <div class="rail-items" id="nav"></div>
+    </nav>
+    <main class="main" id="main" tabindex="-1"></main>
+  </div>
+
+  <section class="player" id="player" data-layer hidden aria-label="Reproductor">
+    <video id="video" playsinline></video>
+    <div class="player-status" id="player-status" role="status" aria-live="polite"></div>
+    <div class="osd" id="osd">
+      <header class="osd-top">
+        <div class="zap" id="zap">
+          <span class="zap-num" id="zap-num" role="img"></span>
+          <span class="zap-text"><strong id="zap-name"></strong><span id="zap-cat"></span></span>
+        </div>
+        <button class="osd-list" data-act="channels" aria-label="Lista de canales" aria-expanded="false"></button>
+      </header>
+      <footer class="osd-bar" id="osd-bar"></footer>
+    </div>
+    <aside class="drawer" id="drawer" hidden aria-label="Lista de canales">
+      <header class="drawer-head">
+        <h2 id="drawer-title">Canales</h2>
+        <button class="pbtn" data-act="drawer-close" aria-label="Cerrar lista de canales"></button>
+      </header>
+      <div class="drawer-cats" id="drawer-cats" role="toolbar" aria-label="Categorías"></div>
+      <div class="drawer-list" id="drawer-list"></div>
+    </aside>
+  </section>
+
+  <div class="toast" id="toast" role="alert" hidden></div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

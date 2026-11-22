@@ -1,0 +1,96 @@
+name: Build
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+        env: { ELECTRON_SKIP_BINARY_DOWNLOAD: "1" }
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build
+      - run: npm test
+      - run: npm run test:e2e
+
+  android:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 21, cache: gradle }
+      - run: npm ci
+        env: { ELECTRON_SKIP_BINARY_DOWNLOAD: "1" }
+      - run: npm run android:sync
+      - run: ./gradlew assembleDebug
+        working-directory: android
+      - run: mv android/app/build/outputs/apk/debug/app-debug.apk WeaVision-android.apk
+      - uses: actions/upload-artifact@v4
+        with: { name: WeaVision-android, path: WeaVision-android.apk }
+
+  windows:
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npm run dist:win # -> release/WeaVision-windows-setup.exe + WeaVision-windows-portable.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WeaVision-windows
+          path: |
+            release/*.exe
+            release/*.zip
+
+  # Fixed download links for the latest build of main:
+  # https://github.com/Jaime-SC/WeaVision/releases/download/latest-main/WeaVision-android.apk
+  # https://github.com/Jaime-SC/WeaVision/releases/download/latest-main/WeaVision-windows-setup.exe
+  # https://github.com/Jaime-SC/WeaVision/releases/download/latest-main/WeaVision-windows-portable.zip
+  latest-main:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [android, windows]
+    runs-on: ubuntu-latest
+    permissions: { contents: write }
+    env: { GH_TOKEN: "${{ github.token }}", GH_REPO: "${{ github.repository }}" }
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { pattern: "WeaVision-*", merge-multiple: true }
+      - name: Publish to the latest-main release
+        run: |
+          files="WeaVision-android.apk WeaVision-windows-setup.exe WeaVision-windows-portable.zip"
+          notes="Última versión generada desde main (${GITHUB_SHA::7}). Se reemplaza en cada push.
+
+          - **Android / Android TV / Android Auto**: WeaVision-android.apk
+          - **Windows (instalador)**: WeaVision-windows-setup.exe
+          - **Windows (portable)**: WeaVision-windows-portable.zip. Descomprime y abre WeaVision.exe, sin instalar."
+          if gh release view latest-main >/dev/null 2>&1; then
+            gh api -X PATCH "repos/$GH_REPO/git/refs/tags/latest-main" -f sha="$GITHUB_SHA" -F force=true
+            gh release edit latest-main --notes "$notes"
+            gh release upload latest-main $files --clobber
+          else
+            gh release create latest-main $files --target "$GITHUB_SHA" --prerelease --latest=false --title "Última versión de main" --notes "$notes"
+          fi
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [android, windows]
+    runs-on: ubuntu-latest
+    permissions: { contents: write }
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { pattern: "WeaVision-*", merge-multiple: true }
+      - uses: softprops/action-gh-release@v2
+        with: { files: "*" }

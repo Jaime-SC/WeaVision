@@ -1,0 +1,24 @@
+#EXTM3U x-tvg-url="http://example.com/epg.xml"
+#EXTINF:-1 tvg-id="ch1" tvg-name="Canal Uno" tvg-logo="http://example.com/logo1.png" group-title="Deportes",Canal Deportes HD
+http://example.com/stream/deportes.ts
+#EXTINF:-1 tvg-id="ch2" tvg-logo="http://example.com/logo2.png" group-title="Noticias",Noticias 24
+https://example.com/stream/noticias.m3u8
+#EXTINF:-1 tvg-id="" group-title="Chile",Canal Nacional
+http://cdn.example.com/live/nacional
+#EXTINF:0,Canal Sin Atributos
+http://example.com/plain.ts
+#EXTINF:-1 tvg-id="dup" group-title="Música",Duplicado A
+http://example.com/same-url.ts
+#EXTINF:-1 tvg-id="dup2" group-title="Música",Duplicado B
+http://example.com/same-url.ts
+# This is a comment
+#EXTINF:-1 tvg-name="Especial ñ & ü" group-title="Películas",Película: El Niño & Co.
+https://cdn.example.org/movie/special.m3u8
+#EXTINF:-1 tvg-country="CL" tvg-language="es" tvg-chno="12" group-title="Chile",Chile Señal 12
+rtmp://live.example.com/app/stream12
+# Invalid: URL without EXTINF
+http://orphan.example.com/stream
+# Invalid EXTINF without URL next
+#EXTINF:-1 group-title="Broken",Canal Roto
+#EXTINF:-1 group-title="Invalid",Bad URL Channel
+not-a-valid-url

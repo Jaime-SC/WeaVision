@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256"><title>WeaVision</title>
+  <path d="M48 76 L92 204 L128 124 L164 204 L208 76" fill="none" stroke="#000" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="48" cy="56" r="24"/><circle cx="208" cy="56" r="24"/>
+</svg>
