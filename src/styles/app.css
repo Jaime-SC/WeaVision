@@ -395,8 +395,8 @@ html.native-video .player video { display: none; }
 
 .osd-top { grid-row: 1; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .zap { display: inline-flex; align-items: stretch; gap: 0; max-width: 100%; min-width: 0; }
-/* Channel list: its own button in the top corner, apart from the transport bar. */
-.osd-list {
+/* Favourite: its own button in the top corner, apart from the transport bar. */
+.osd-fav {
   flex: none;
   display: inline-flex; align-items: center; gap: 10px;
   height: 56px;
@@ -409,9 +409,11 @@ html.native-video .player video { display: none; }
   box-shadow: 0 20px 40px -20px rgba(0, 0, 0, 0.7);
   transition: background 0.2s, transform 0.25s var(--ease-out);
 }
-.osd-list svg { width: 24px; height: 24px; }
-.osd-list:hover { background: var(--green-up); }
-.osd-list:focus-visible { background: var(--grey); color: var(--green); transform: scale(1.06); outline-offset: 2px; }
+.osd-fav svg { width: 24px; height: 24px; transition: transform 0.35s var(--ease-out); }
+.osd-fav.on svg { color: var(--red); transform: rotate(-12deg) scale(1.1); }
+.osd-fav:hover { background: var(--green-up); }
+.osd-fav:focus-visible { background: var(--grey); color: var(--green); transform: scale(1.06); outline-offset: 2px; }
+.osd-fav.on:focus-visible svg { color: var(--red); }
 .zap-num {
   display: inline-flex; align-items: center; justify-content: center; gap: 0.04em;
   min-width: 2.4em;
@@ -464,6 +466,35 @@ html.native-video .player video { display: none; }
 .bar-gap { width: 10px; }
 .vol { width: 120px; accent-color: var(--red); }
 .vol:focus-visible { outline-offset: 6px; border-radius: 4px; }
+.pbtn[aria-expanded="true"] { color: var(--red); }
+
+/* Phone: swipes on the picture set volume (right half) and brightness (left half). */
+html[data-device="phone"] .player { touch-action: none; }
+html[data-device="phone"] .osd-bar { touch-action: pan-x; }
+.hud {
+  position: absolute;
+  z-index: 4;
+  top: 50%;
+  translate: 0 -50%;
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  padding: 16px 10px 12px;
+  border-radius: 999px;
+  background: rgba(17, 48, 31, 0.92);
+  box-shadow: 0 20px 40px -20px rgba(0, 0, 0, 0.7);
+  pointer-events: none;
+}
+.hud[hidden] { display: none; }
+.hud[data-side="right"] { right: max(32px, env(safe-area-inset-right)); }
+.hud[data-side="left"] { left: max(32px, env(safe-area-inset-left)); }
+.hud-icon svg { width: 22px; height: 22px; display: block; }
+.hud-track { position: relative; width: 6px; height: min(170px, 34vh); border-radius: 3px; background: rgb(227 228 229 / 0.2); overflow: hidden; }
+.hud-fill { position: absolute; inset: 0; border-radius: inherit; background: var(--red); transform-origin: 50% 100%; transform: scaleY(0); transition: transform 0.08s linear; }
+.hud-val { min-width: 2ch; text-align: center; font-weight: 800; font-size: 0.9rem; font-variant-numeric: tabular-nums; }
+
+/* Picture-in-picture (Android): only the video goes into the floating window. */
+html.pip .osd, html.pip .drawer, html.pip .hud, html.pip .player-status, html.pip .toast { display: none !important; }
 
 .player-status {
   position: absolute; inset: 0;
@@ -524,8 +555,8 @@ html.native-video .player video { display: none; }
   .vol, .desktop-only { display: none; }
   .pbtn { width: 46px; height: 46px; }
   .pbtn.big { width: 56px; height: 56px; }
-  .osd-list { height: 48px; padding: 0 14px; }
-  .osd-list span { display: none; }
+  .osd-fav { height: 48px; padding: 0 14px; }
+  .osd-fav span { display: none; }
 }
 
 @media (hover: none) { .desktop-only { display: none; } }
@@ -609,13 +640,48 @@ html.native-video .player video { display: none; }
   border: 1px solid var(--green-line);
   border-radius: 0 var(--r-l) var(--r-l) 0;
   box-shadow: 24px 0 48px -24px rgba(0, 0, 0, 0.7);
+  overflow: hidden;
 }
-.drawer[hidden] { display: none; }
-.drawer-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.drawer[hidden], .drawer [hidden] { display: none !important; }
+.drawer-head { display: flex; align-items: center; gap: 6px; }
+.drawer-titles { flex: 1; min-width: 0; display: grid; padding-left: 4px; }
+.drawer-kicker { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--grey-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .drawer-head h2 { font-size: 1.35rem; font-weight: 800; letter-spacing: -0.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.drawer-cats { display: flex; gap: 6px; overflow-x: auto; padding: 4px 2px 8px; flex: none; }
-.drawer-cats .cat { flex: none; white-space: nowrap; }
+/* Level 1: categories, one per row, chevron toward their channels. */
+.drawer-cats {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  padding: 4px;
+  touch-action: pan-y;
+}
+.dcat {
+  display: grid;
+  grid-template-columns: 10px 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 12px 13px 10px;
+  border-radius: var(--r-m);
+  text-align: left;
+  font-weight: 700;
+  transition: background 0.2s, color 0.2s, transform 0.25s var(--ease-out);
+}
+.dcat::before { content: ""; width: 8px; height: 8px; border-radius: 50%; }
+.dcat.live::before { background: var(--red); box-shadow: 0 0 0 4px rgb(238 65 41 / 0.25); }
+.dcat-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dcat-count { font-size: 0.88rem; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--grey-soft); }
+.dcat svg { width: 18px; height: 18px; opacity: 0.55; transition: transform 0.25s var(--ease-out), opacity 0.2s; }
+.dcat:hover { background: var(--green-up); }
+.dcat:hover svg { transform: translateX(3px); opacity: 1; }
+.dcat:focus-visible { background: var(--grey); color: var(--green); transform: scale(1.02); outline-offset: 2px; }
+.dcat:focus-visible .dcat-count { color: #3d6652; }
+.dcat:focus-visible svg { transform: translateX(3px); opacity: 1; }
+/* Level 2: the channels of the category picked. */
 .drawer-list {
+  touch-action: pan-y;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -638,15 +704,3 @@ html.native-video .player video { display: none; }
 .drawer .tile:focus-visible { transform: scale(1.025); }
 .drawer .empty { padding: 8px; }
 
-/* Phone held upright: the list rises as a bottom sheet over the lower part of the video. */
-@media (max-width: 720px) and (orientation: portrait) {
-  .drawer {
-    top: auto;
-    right: 0;
-    width: auto;
-    height: 68%;
-    border-radius: var(--r-l) var(--r-l) 0 0;
-    padding: 16px 14px max(14px, env(safe-area-inset-bottom));
-    box-shadow: 0 -24px 48px -24px rgba(0, 0, 0, 0.7);
-  }
-}

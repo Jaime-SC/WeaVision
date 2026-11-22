@@ -5,7 +5,7 @@ import { Capacitor } from "@capacitor/core";
 import { store, type Channel, type Playlist } from "./core/store";
 import { createPlayer, WeaPlayer, type PlayerState } from "./player/player";
 import { icon } from "./ui/icons";
-import { barChart, drawLogo, drawerMotion, enterView, holdToConfirm, moveTabIndicator, osd, revealTiles, shimmer, showToast, slapSticker, splitFlap, tuning } from "./ui/fx";
+import { barChart, drawLogo, drawerMotion, drawerStep, enterView, hudMotion, holdToConfirm, moveTabIndicator, osd, revealTiles, shimmer, showToast, slapSticker, splitFlap, tuning } from "./ui/fx";
 import { focusFirst, move } from "./ui/spatial";
 
 type View = "home" | "live" | "favorites" | "recent" | "lists";
@@ -33,9 +33,15 @@ const ui = {
   current: undefined as Channel | undefined,
   state: "idle" as PlayerState,
   osdTimer: 0,
-  /** Category shown in the in-player channel drawer ("" = all, "*" = favourites). */
+  /** Category last opened in the in-player channel drawer ("" = all, "*" = favourites). */
   drawerCat: "",
+  /** The drawer shows the categories first, then the channels of the one picked. */
+  drawerLevel: "cats" as "cats" | "list",
 };
+
+/** Which controls make sense: a TV uses its remote for volume, a phone uses swipes. */
+type Device = "desktop" | "phone" | "tv";
+const device = { kind: "desktop" as Device, pip: !!document.pictureInPictureEnabled };
 
 const main = $("main");
 const video = $<HTMLVideoElement>("video");
@@ -226,7 +232,7 @@ function renderWelcome() {
 function addForm() {
   return `<form class="add" id="add-form" autocomplete="off">
     <label class="field"><span>Nombre</span><input id="add-name" placeholder="Mi lista" maxlength="60"></label>
-    <label class="field grow"><span>Enlace M3U</span><input id="add-url" type="url" inputmode="url" placeholder="https://…/lista.m3u" data-autofocus></label>
+    <label class="field grow"><span>Enlace M3U</span><input id="add-url" type="url" inputmode="url" placeholder="https://…/lista.m3u"></label>
     <div class="add-actions">
       <button class="btn primary" type="submit" id="add-submit">${icon.link}<span>Cargar enlace</span></button>
       <button class="btn" type="button" id="add-file-btn">${icon.file}<span>Elegir archivo</span></button>
@@ -342,23 +348,31 @@ function renderLists() {
 
 function renderBar() {
   const ch = ui.current;
-  const fav = ch && store.isFavorite(ch.url);
+  const fav = !!ch && store.isFavorite(ch.url);
   const paused = ui.state === "paused";
   const { volume, muted } = store.settings;
+  // Favourite lives in the top corner, apart from the transport controls.
+  const f = $("osd-fav");
+  f.classList.toggle("on", fav);
+  f.setAttribute("aria-pressed", String(fav));
+  f.setAttribute("aria-label", fav ? "Quitar de favoritos" : "Agregar a favoritos");
+  f.innerHTML = `${fav ? icon.starFill : icon.star}<span>${fav ? "En favoritos" : "Favorito"}</span>`;
+  // Volume only on Windows: the TV has its remote, the phone a swipe on the right half.
+  const volumeControls = device.kind === "desktop" ? `
+    <span class="bar-gap"></span>
+    <button class="pbtn" data-act="mute" aria-label="${muted ? "Activar sonido" : "Silenciar"}">${muted ? icon.mute : icon.volume}</button>
+    <input class="vol" type="range" min="0" max="100" value="${volume}" aria-label="Volumen" data-act="vol">
+    <button class="pbtn desktop-only" data-act="full" aria-label="Pantalla completa">${icon.full}</button>` : "";
   $("osd-bar").innerHTML = `
+    <button class="pbtn" data-act="channels" aria-label="Lista de canales" aria-expanded="${!$("drawer").hidden}">${icon.list}</button>
     <button class="pbtn" data-act="prev" aria-label="Canal anterior">${icon.up}</button>
     <button class="pbtn big" data-act="toggle" aria-label="${paused ? "Reproducir" : "Pausa"}" data-autofocus>${paused ? icon.play : icon.pause}</button>
     <button class="pbtn" data-act="next" aria-label="Canal siguiente">${icon.down}</button>
+    ${device.pip ? `<button class="pbtn" data-act="pip" aria-label="Imagen en imagen">${icon.pip}</button>` : ""}
+    ${volumeControls}
     <span class="bar-gap"></span>
-    <button class="pbtn${fav ? " on" : ""}" data-act="fav" aria-pressed="${fav}" aria-label="${fav ? "Quitar de favoritos" : "Agregar a favoritos"}">${fav ? icon.starFill : icon.star}</button>
-    <button class="pbtn" data-act="mute" aria-label="${muted ? "Activar sonido" : "Silenciar"}">${muted ? icon.mute : icon.volume}</button>
-    <input class="vol" type="range" min="0" max="100" value="${volume}" aria-label="Volumen" data-act="vol">
-    <button class="pbtn desktop-only" data-act="full" aria-label="Pantalla completa">${icon.full}</button>
     <button class="pbtn" data-act="close" aria-label="Cerrar reproductor">${icon.close}</button>`;
 }
-
-// The list button lives in the top corner, apart from the transport controls.
-$("osd").querySelector<HTMLElement>(".osd-list")!.innerHTML = `${icon.list}<span>Canales</span>`;
 $("osd").addEventListener("click", (e) => {
   const act = (e.target as HTMLElement).closest<HTMLElement>("[data-act]")?.dataset.act;
   if (act) action(act);
@@ -374,6 +388,7 @@ function action(act: string) {
   if (act === "next") zap(1);
   if (act === "toggle") ui.state === "paused" ? player.resume() : player.pause();
   if (act === "close") closePlayer();
+  if (act === "pip") void pictureInPicture();
   if (act === "mute") void setVolume(store.settings.volume, !store.settings.muted);
   if (act === "full") document.fullscreenElement ? void document.exitFullscreen() : void $("player").requestFullscreen?.();
   if (act === "retry" && ui.current) void play(ui.current, ui.context);
@@ -381,6 +396,26 @@ function action(act: string) {
   if (act === "fav" && ui.current) {
     const ch = ui.current;
     void store.toggleFavorite(ch).then((on) => { toast(on ? "Agregado a favoritos" : "Quitado de favoritos"); renderBar(); keepFocus("fav"); });
+  }
+}
+
+async function pictureInPicture() {
+  if (player.native) {
+    // Only the picture goes into the floating window: hide every overlay first.
+    void closeDrawer(true);
+    hideOsd();
+    document.documentElement.classList.add("pip");
+    await WeaPlayer.enterPip().catch((e: Error) => {
+      document.documentElement.classList.remove("pip");
+      toast(e.message || "No se pudo abrir imagen en imagen", true);
+    });
+    return;
+  }
+  try {
+    if (document.pictureInPictureElement) await document.exitPictureInPicture();
+    else await video.requestPictureInPicture();
+  } catch {
+    toast("Imagen en imagen necesita que el canal esté reproduciéndose", true);
   }
 }
 
@@ -410,7 +445,9 @@ async function play(ch: Channel, context: Channel[]) {
   const drawerOpen = !$("drawer").hidden;
   showOsd(!drawerOpen); // while browsing the drawer, keep focus in the list
   if (drawerOpen) markPlaying();
-  player.setVolume(store.settings.volume, store.settings.muted);
+  // Android: the system volume (remote, side keys, swipe) is the only volume; the player stays at full.
+  if (device.kind === "desktop") player.setVolume(store.settings.volume, store.settings.muted);
+  else player.setVolume(100, false);
   void store.recordPlay(ch);
   await player.play(ch);
 }
@@ -426,7 +463,10 @@ function closePlayer() {
   player.stop();
   tuning(null);
   $("drawer").hidden = true;
+  $("drawer").removeAttribute("data-layer");
   if (player.native) void WeaPlayer.setFullscreen({ on: false });
+  // Brightness set with a swipe belongs to the player; the rest of the app follows the system.
+  if (device.kind === "phone") void WeaPlayer.setLevel({ kind: "brightness", value: -1 }).catch(() => {});
   $("player").hidden = true;
   document.documentElement.classList.remove("native-video");
   const url = ui.current?.url;
@@ -476,29 +516,34 @@ function hideOsd() {
 
 /* ---------- quick channel drawer (inside the player) ---------- */
 
+const listButton = () => $("osd-bar").querySelector<HTMLElement>("[data-act=channels]");
+/** The category of the channel on screen, marked in the drawer ("" when it isn't in the active list). */
+const playingCat = () => {
+  const ch = ui.current;
+  return ch && store.channels.some((c) => c.url === ch.url) ? (ch.group ?? "Sin categoría") : "";
+};
+
 function openDrawer() {
   const d = $("drawer");
-  const ch = ui.current;
-  if (d.hidden) ui.drawerCat = ch && store.channels.some((c) => c.url === ch.url) ? (ch.group ?? "Sin categoría") : "";
+  if (!d.hidden) return;
+  ui.drawerCat = playingCat();
   d.hidden = false;
   d.setAttribute("data-layer", "");
-  $("osd").querySelector(".osd-list")!.setAttribute("aria-expanded", "true");
-  $("drawer-title").textContent = store.active?.name ?? "Canales";
-  renderDrawer();
+  listButton()?.setAttribute("aria-expanded", "true");
+  showCats(false);
   void drawerMotion(d, true);
   hideOsd();
-  (d.querySelector<HTMLElement>(".tile.is-playing") ?? d.querySelector<HTMLElement>(".drawer-cats .cat.active"))?.focus();
-  d.querySelector(".tile.is-playing")?.scrollIntoView({ block: "center" });
 }
 
-async function closeDrawer() {
+async function closeDrawer(instant = false) {
   const d = $("drawer");
   if (d.hidden) return;
   d.removeAttribute("data-layer");
-  await drawerMotion(d, false);
+  if (!instant) await drawerMotion(d, false);
   d.hidden = true;
-  $("osd").querySelector(".osd-list")!.setAttribute("aria-expanded", "false");
   d.style.transform = d.style.opacity = "";
+  listButton()?.setAttribute("aria-expanded", "false");
+  if (instant) return;
   showOsd(true);
   keepFocus("channels");
 }
@@ -508,17 +553,49 @@ function drawerList() {
   return store.filter("", ui.drawerCat || undefined);
 }
 
-function renderDrawer() {
-  const cats = [
+/** Level 1: the categories, with the one on screen marked and the last one opened focused. */
+function showCats(animated: boolean) {
+  ui.drawerLevel = "cats";
+  const cats = $("drawer-cats");
+  $("drawer-list").hidden = true;
+  $("drawer-list").innerHTML = "";
+  cats.hidden = false;
+  const live = playingCat();
+  cats.innerHTML = [
     { id: "", name: "Todos", count: store.channels.length },
     { id: "*", name: "Favoritos", count: store.favorites.length },
     ...store.categories().map((c) => ({ id: c.name, ...c })),
-  ];
-  $("drawer-cats").innerHTML = cats
-    .map((c) => `<button class="cat${c.id === ui.drawerCat ? " active" : ""}" data-cat="${esc(c.id)}">${esc(c.name)} <span>${c.count.toLocaleString("es-CL")}</span></button>`)
-    .join("");
-  grid($("drawer-list"), drawerList(), ui.drawerCat === "*" ? "Aún no tienes favoritos." : "No hay canales aquí.");
-  $("drawer-cats").querySelector(".cat.active")?.scrollIntoView({ inline: "center", block: "nearest" });
+  ].map((c) => `<button class="dcat${c.id === live && ui.current ? " live" : ""}" data-cat="${esc(c.id)}">
+      <span class="dcat-name">${esc(c.name)}</span><span class="dcat-count">${c.count.toLocaleString("es-CL")}</span>${icon.next}
+    </button>`).join("");
+  $("drawer-back").hidden = true;
+  $("drawer-kicker").textContent = "Categorías";
+  $("drawer-title").textContent = store.active?.name ?? "Canales";
+  if (animated) drawerStep(cats, $("drawer-head"), false, true);
+  const target = [...cats.querySelectorAll<HTMLElement>(".dcat")].find((b) => b.dataset.cat === ui.drawerCat) ?? cats.querySelector<HTMLElement>(".dcat");
+  target?.focus({ preventScroll: true });
+  target?.scrollIntoView({ block: "center" });
+}
+
+/** Level 2: the channels of one category; Back (or Left on the remote) returns to the categories. */
+function showList(cat: string) {
+  ui.drawerLevel = "list";
+  ui.drawerCat = cat;
+  const list = $("drawer-list");
+  $("drawer-cats").hidden = true;
+  list.hidden = false;
+  list.scrollTop = 0;
+  $("drawer-back").hidden = false;
+  $("drawer-kicker").textContent = store.active?.name ?? "Canales";
+  $("drawer-title").textContent = cat === "*" ? "Favoritos" : cat || "Todos";
+  // Browsing a category must not change what Up/Down zaps through until a channel is picked.
+  const zapping = ui.context;
+  grid(list, drawerList(), cat === "*" ? "Aún no tienes favoritos." : "No hay canales aquí.");
+  ui.context = zapping;
+  drawerStep(list, $("drawer-head"), true);
+  const playing = list.querySelector<HTMLElement>(".tile.is-playing");
+  (playing ?? list.querySelector<HTMLElement>(".tile") ?? $("drawer-back")).focus({ preventScroll: true });
+  playing?.scrollIntoView({ block: "center" });
 }
 
 function markPlaying() {
@@ -526,20 +603,97 @@ function markPlaying() {
 }
 
 $("drawer").querySelector<HTMLElement>("[data-act=drawer-close]")!.innerHTML = icon.close;
+$("drawer-back").innerHTML = icon.back;
 $("drawer").addEventListener("click", (e) => {
   const el = e.target as HTMLElement;
   if (el.closest("[data-act=drawer-close]")) return void closeDrawer();
+  if (el.closest("[data-act=drawer-back]")) return showCats(true);
   const cat = el.closest<HTMLElement>("[data-cat]");
-  if (!cat) return;
-  ui.drawerCat = cat.dataset.cat ?? "";
-  renderDrawer();
-  $("drawer-cats").querySelector<HTMLElement>(".cat.active")?.focus();
+  if (cat) showList(cat.dataset.cat ?? "");
 });
+
+/* ---------- phone gestures: swipe up/down, right half volume, left half brightness ---------- */
+
+type Levels = { volume: number; volumeSteps: number; brightness: number };
+const swipe = {
+  id: -1, x: 0, y: 0, kind: "" as "" | "volume" | "brightness",
+  base: 0, baseY: 0, value: 0, levels: undefined as Levels | undefined,
+  sent: true, used: false, hudTimer: 0,
+};
+
+$("player").addEventListener("pointerdown", (e) => {
+  swipe.used = false;
+  if (device.kind !== "phone" || !$("drawer").hidden || (e.target as HTMLElement).closest("button, input")) return;
+  Object.assign(swipe, { id: e.pointerId, x: e.clientX, y: e.clientY, kind: "", levels: undefined, used: false });
+  void WeaPlayer.levels().then((l) => { if (swipe.id === e.pointerId) swipe.levels = l; }).catch(() => {});
+});
+
+$("player").addEventListener("pointermove", (e) => {
+  if (e.pointerId !== swipe.id) {
+    if (e.pointerType === "mouse") showOsd();
+    return;
+  }
+  if (!swipe.kind) {
+    const dx = e.clientX - swipe.x, dy = e.clientY - swipe.y;
+    if (!swipe.levels || Math.abs(dy) < 14 || Math.abs(dy) < Math.abs(dx) * 1.4) return;
+    swipe.kind = swipe.x > innerWidth / 2 ? "volume" : "brightness";
+    swipe.base = swipe.kind === "volume" ? swipe.levels.volume : swipe.levels.brightness;
+    swipe.baseY = e.clientY;
+    swipe.used = true;
+    hideOsd();
+  }
+  // A full swipe over ~60% of the screen height goes from 0 to 100%.
+  let v = Math.min(1, Math.max(0, swipe.base - (e.clientY - swipe.baseY) / (innerHeight * 0.6)));
+  if (swipe.kind === "volume") v = Math.round(v * swipe.levels!.volumeSteps) / swipe.levels!.volumeSteps;
+  if (v === swipe.value && !swipe.sent) return;
+  swipe.value = v;
+  showHud(swipe.kind, v);
+  if (swipe.sent) {
+    swipe.sent = false;
+    requestAnimationFrame(() => {
+      swipe.sent = true;
+      void WeaPlayer.setLevel({ kind: swipe.kind || "volume", value: swipe.value }).catch(() => {});
+    });
+  }
+});
+
+const endSwipe = (e: PointerEvent) => {
+  if (e.pointerId !== swipe.id) return;
+  swipe.id = -1;
+  if (swipe.used) hideHud();
+};
+$("player").addEventListener("pointerup", endSwipe);
+$("player").addEventListener("pointercancel", endSwipe);
+
+function showHud(kind: "volume" | "brightness", v: number) {
+  const hud = $("hud");
+  clearTimeout(swipe.hudTimer);
+  hud.dataset.side = kind === "volume" ? "right" : "left";
+  hud.querySelector(".hud-icon")!.innerHTML = kind === "brightness" ? icon.sun : v === 0 ? icon.mute : icon.volume;
+  hud.querySelector<HTMLElement>(".hud-fill")!.style.transform = `scaleY(${v})`;
+  hud.querySelector(".hud-val")!.textContent = String(Math.round(v * 100));
+  if (hud.hidden) {
+    hud.hidden = false;
+    void hudMotion(hud, true);
+  }
+}
+
+function hideHud() {
+  clearTimeout(swipe.hudTimer);
+  swipe.hudTimer = window.setTimeout(async () => {
+    await hudMotion($("hud"), false);
+    if (swipe.id === -1) $("hud").hidden = true;
+  }, 650);
+}
 
 /* ---------- input: remote, keyboard, back button ---------- */
 
 function back(): boolean {
-  if (!$("drawer").hidden) { void closeDrawer(); return true; }
+  if (!$("drawer").hidden) {
+    if (ui.drawerLevel === "list") showCats(true);
+    else void closeDrawer();
+    return true;
+  }
   if (!$("player").hidden) {
     if ($("player").classList.contains("osd-on") && ui.state === "playing") {
       hideOsd();
@@ -569,6 +723,13 @@ document.addEventListener("keydown", (e) => {
     return;
   }
 
+  if (playerOpen && !$("drawer").hidden) {
+    const onCat = (e.target as HTMLElement).matches?.(".dcat");
+    // Remote: Right opens the focused category, Left from the channels goes back to the categories.
+    if (e.key === "ArrowRight" && onCat) { e.preventDefault(); return (e.target as HTMLElement).click(); }
+    if (e.key === "ArrowLeft" && ui.drawerLevel === "list" && (e.target as HTMLElement).closest(".tile")) { e.preventDefault(); return showCats(true); }
+  }
+
   if (playerOpen && $("drawer").hidden) {
     const k = e.key;
     // Quick list: Left on the remote while watching, or L on a keyboard.
@@ -576,7 +737,7 @@ document.addEventListener("keydown", (e) => {
     if (k === "ChannelUp" || k === "PageUp" || (!osdOn && k === "ArrowUp")) { e.preventDefault(); return zap(-1); }
     if (k === "ChannelDown" || k === "PageDown" || (!osdOn && k === "ArrowDown")) { e.preventDefault(); return zap(1); }
     if (k === "MediaPlayPause" || (k === " " && !(e.target as HTMLElement).closest("button"))) { e.preventDefault(); return action("toggle"); }
-    if (k.toLowerCase() === "m" && !typing) return action("mute");
+    if (k.toLowerCase() === "m" && !typing && device.kind === "desktop") return action("mute");
     if (k.toLowerCase() === "f" && !typing) return action("full");
     if (!osdOn && (k === "Enter" || k.startsWith("Arrow"))) { e.preventDefault(); return showOsd(true); }
     showOsd();
@@ -587,15 +748,26 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
-$("player").addEventListener("pointermove", () => showOsd());
 $("player").addEventListener("click", (e) => {
-  if (e.target === video || e.target === $("player") || e.target === $("osd")) {
+  // The tap that ends a volume/brightness swipe is not a tap on the picture.
+  if (swipe.used) { swipe.used = false; return; }
+  // Tapping the picture beside the open drawer closes it.
+  const onPicture = e.target === video || e.target === $("player") || e.target === $("osd");
+  if (!$("drawer").hidden) { if (onPicture) void closeDrawer(); return; }
+  if (onPicture) {
     $("player").classList.contains("osd-on") && ui.state === "playing" ? hideOsd() : showOsd();
   }
 });
 video.addEventListener("dblclick", () => action("full"));
 
+video.addEventListener("enterpictureinpicture", () => hideOsd());
+video.addEventListener("leavepictureinpicture", () => showOsd());
+
 if (Capacitor.isNativePlatform()) {
+  void WeaPlayer.addListener("pip", ({ on }) => {
+    document.documentElement.classList.toggle("pip", on);
+    if (!on && !$("player").hidden) showOsd(true);
+  });
   void CapApp.addListener("backButton", () => { if (!back()) void CapApp.minimizeApp(); });
   // Android Auto reads favourites and recents from the native side.
   const sync = () => void WeaPlayer.syncLibrary({ favorites: store.favorites, recent: store.history.map((h) => h.channel) }).catch(() => {});
@@ -607,6 +779,13 @@ const WATCH_TICK = 15;
 setInterval(() => { if (ui.state === "playing" && !$("player").hidden) void store.addWatch(WATCH_TICK); }, WATCH_TICK * 1000);
 
 /* ---------- boot ---------- */
+
+if (player.native) {
+  const info = await WeaPlayer.info().catch(() => ({ tv: false, pip: false }));
+  device.kind = info.tv ? "tv" : "phone";
+  device.pip = info.pip;
+}
+document.documentElement.dataset.device = device.kind;
 
 await store.load();
 go("home");

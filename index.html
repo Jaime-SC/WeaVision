@@ -28,18 +28,20 @@
           <span class="zap-num" id="zap-num" role="img"></span>
           <span class="zap-text"><strong id="zap-name"></strong><span id="zap-cat"></span></span>
         </div>
-        <button class="osd-list" data-act="channels" aria-label="Lista de canales" aria-expanded="false"></button>
+        <button class="osd-fav" id="osd-fav" data-act="fav"></button>
       </header>
       <footer class="osd-bar" id="osd-bar"></footer>
     </div>
     <aside class="drawer" id="drawer" hidden aria-label="Lista de canales">
-      <header class="drawer-head">
-        <h2 id="drawer-title">Canales</h2>
+      <header class="drawer-head" id="drawer-head">
+        <button class="pbtn" id="drawer-back" data-act="drawer-back" aria-label="Volver a categorías" hidden></button>
+        <div class="drawer-titles"><span class="drawer-kicker" id="drawer-kicker"></span><h2 id="drawer-title">Canales</h2></div>
         <button class="pbtn" data-act="drawer-close" aria-label="Cerrar lista de canales"></button>
       </header>
-      <div class="drawer-cats" id="drawer-cats" role="toolbar" aria-label="Categorías"></div>
-      <div class="drawer-list" id="drawer-list"></div>
+      <div class="drawer-cats" id="drawer-cats" aria-label="Categorías"></div>
+      <div class="drawer-list" id="drawer-list" hidden></div>
     </aside>
+    <div class="hud" id="hud" hidden aria-hidden="true"><span class="hud-icon"></span><span class="hud-track"><span class="hud-fill"></span></span><span class="hud-val"></span></div>
   </section>
 
   <div class="toast" id="toast" role="alert" hidden></div>

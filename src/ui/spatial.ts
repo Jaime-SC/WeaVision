@@ -13,8 +13,11 @@ export function scope(): ParentNode {
   return layers.at(-1) ?? document;
 }
 
+/** Text fields open the on-screen keyboard when focused, so they are never focused on their own. */
+const isText = (el: Element) => el.matches("input:not([type=range]):not([type=file]), textarea");
+
 export function focusFirst(root: ParentNode = scope()): void {
-  const el = [...root.querySelectorAll<HTMLElement>("[data-autofocus]"), ...root.querySelectorAll<HTMLElement>(FOCUSABLE)].find(visible);
+  const el = [...root.querySelectorAll<HTMLElement>("[data-autofocus]"), ...root.querySelectorAll<HTMLElement>(FOCUSABLE)].find((e) => visible(e) && !isText(e));
   el?.focus({ preventScroll: false });
 }
 
@@ -46,7 +49,33 @@ export function move(dir: Dir): boolean {
     if (score < bestScore) { bestScore = score; best = el; }
   }
   if (!best) return false;
+  if (isText(best)) holdKeyboard(best as HTMLInputElement);
   best.focus({ preventScroll: true });
   best.scrollIntoView({ block: "nearest", inline: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
   return true;
+}
+
+/**
+ * Reaching a text field with the remote only highlights it; the keyboard opens when the user
+ * presses OK (or taps it), not just because focus passed through on the way somewhere else.
+ */
+function holdKeyboard(input: HTMLInputElement) {
+  if (input.readOnly) return;
+  input.readOnly = true;
+  const release = () => {
+    input.readOnly = false;
+    input.removeEventListener("keydown", onKey);
+    input.removeEventListener("blur", release);
+    input.removeEventListener("pointerdown", release);
+  };
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    release();
+    input.blur();
+    input.focus(); // focusing again, now writable, brings up the keyboard
+  };
+  input.addEventListener("keydown", onKey);
+  input.addEventListener("blur", release);
+  input.addEventListener("pointerdown", release);
 }

@@ -27,17 +27,32 @@ export function osd(el: HTMLElement, show: boolean) {
   if (bar) animate(bar, show ? { y: [24, 0], opacity: [0, 1] } : { y: 24, opacity: 0 }, { type: "spring", stiffness: 380, damping: 30 });
 }
 
-/** Channel drawer: a side panel on wide screens, a bottom sheet on a phone held upright. */
+/** Channel drawer: always slides in from the left edge, on every screen. */
 export function drawerMotion(el: HTMLElement, open: boolean): Promise<unknown> {
   if (reduced()) return Promise.resolve();
-  const sheet = matchMedia("(max-width: 720px) and (orientation: portrait)").matches;
-  // Set both axes every time: Motion remembers the last value of each, so a sheet closed
-  // upright would otherwise reopen pushed off-screen after the phone is turned sideways.
-  const off = sheet ? { x: "0%", y: "100%" } : { x: "-100%", y: "0%" };
-  const on = { x: "0%", y: "0%" };
   return open
-    ? animate(el, { ...on, opacity: [0.6, 1] }, { type: "spring", stiffness: 360, damping: 34 }).finished
-    : animate(el, { ...off, opacity: 0.6 }, { duration: 0.22, ease: "easeIn" }).finished;
+    ? animate(el, { x: ["-100%", "0%"], opacity: [0.6, 1] }, { type: "spring", stiffness: 360, damping: 34 }).finished
+    : animate(el, { x: "-100%", opacity: 0.6 }, { duration: 0.22, ease: "easeIn" }).finished;
+}
+
+/**
+ * Drawer level change: going into a category the new pane arrives from the right, going back
+ * to the categories it arrives from the left; the header title follows, rows cascade in.
+ */
+export function drawerStep(pane: HTMLElement, title: HTMLElement, forward: boolean, rows = false) {
+  if (reduced()) return;
+  const dx = forward ? 1 : -1;
+  animate(pane, { x: [dx * 56, 0], opacity: [0, 1] }, { type: "spring", stiffness: 420, damping: 36 });
+  animate(title, { x: [dx * 24, 0], opacity: [0, 1] }, { duration: 0.35, ease: EASE_OUT });
+  if (rows) animate([...pane.children].slice(0, 14), { x: [dx * 22, 0], opacity: [0, 1] }, { duration: 0.4, delay: stagger(0.022), ease: EASE_OUT });
+}
+
+/** Volume / brightness indicator: pops in with a spring, fades out when the finger lifts. */
+export function hudMotion(el: HTMLElement, show: boolean): Promise<unknown> {
+  if (reduced()) return Promise.resolve();
+  return show
+    ? animate(el, { opacity: [0, 1], scale: [0.8, 1] }, { type: "spring", stiffness: 520, damping: 28 }).finished
+    : animate(el, { opacity: 0, scale: 0.9 }, { duration: 0.25, ease: "easeIn" }).finished;
 }
 
 /* ---------- KokonutUI "Smooth Tab" (MIT, kokonutui.com) ported: sliding active pill ---------- */

@@ -23,7 +23,12 @@ interface WeaPlayerPlugin {
   setVolume(o: { volume: number }): Promise<void>;
   syncLibrary(o: { favorites: Channel[]; recent: Channel[] }): Promise<void>;
   setFullscreen(o: { on: boolean }): Promise<void>;
+  info(): Promise<{ tv: boolean; pip: boolean }>;
+  levels(): Promise<{ volume: number; volumeSteps: number; brightness: number }>;
+  setLevel(o: { kind: "volume" | "brightness"; value: number }): Promise<void>;
+  enterPip(): Promise<void>;
   addListener(e: "state", fn: (d: { state: PlayerState; message?: string }) => void): Promise<PluginListenerHandle>;
+  addListener(e: "pip", fn: (d: { on: boolean }) => void): Promise<PluginListenerHandle>;
 }
 
 export const WeaPlayer = registerPlugin<WeaPlayerPlugin>("WeaPlayer");

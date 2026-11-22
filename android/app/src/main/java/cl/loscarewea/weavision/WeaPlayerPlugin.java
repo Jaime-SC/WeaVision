@@ -1,11 +1,16 @@
 package cl.loscarewea.weavision;
 
+import android.app.PictureInPictureParams;
 import android.app.UiModeManager;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.graphics.Color;
+import android.media.AudioManager;
 import android.os.Build;
+import android.provider.Settings;
+import android.util.Rational;
 import android.view.Window;
 import android.view.WindowManager;
 import android.view.ViewGroup;
@@ -16,6 +21,7 @@ import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
+import androidx.media3.common.VideoSize;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.ui.AspectRatioFrameLayout;
 import androidx.media3.ui.PlayerView;
@@ -29,6 +35,8 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 /** Bridges the web UI to ExoPlayer, which renders beneath the transparent WebView. */
 @CapacitorPlugin(name = "WeaPlayer")
 public class WeaPlayerPlugin extends Plugin {
+    /** MainActivity forwards picture-in-picture changes here. */
+    static WeaPlayerPlugin instance;
     private ExoPlayer player;
     private PlayerView view;
     private boolean fullscreen;
@@ -46,7 +54,10 @@ public class WeaPlayerPlugin extends Plugin {
 
     @Override
     public void load() {
+        instance = this;
         getActivity().runOnUiThread(() -> {
+            // The app offers no brightness control on a TV: always the panel's maximum.
+            if (isTv()) setBrightness(1f);
             player = Players.get(getContext());
             WebView web = getBridge().getWebView();
             web.setBackgroundColor(Color.TRANSPARENT);
@@ -144,6 +155,99 @@ public class WeaPlayerPlugin extends Plugin {
         if (fullscreen) getActivity().runOnUiThread(this::applyFullscreen);
     }
 
+    private boolean isTv() {
+        UiModeManager ui = (UiModeManager) getContext().getSystemService(Context.UI_MODE_SERVICE);
+        return ui != null && ui.getCurrentModeType() == Configuration.UI_MODE_TYPE_TELEVISION;
+    }
+
+    private boolean pipSupported() {
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+            && getContext().getPackageManager().hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE);
+    }
+
+    /** What the device is, so the web UI shows only the controls that make sense on it. */
+    @PluginMethod
+    public void info(PluginCall call) {
+        JSObject r = new JSObject();
+        r.put("tv", isTv());
+        r.put("pip", pipSupported());
+        call.resolve(r);
+    }
+
+    /** Current media volume and screen brightness, both 0..1, for the swipe gestures. */
+    @PluginMethod
+    public void levels(PluginCall call) {
+        getActivity().runOnUiThread(() -> {
+            AudioManager audio = (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
+            int max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+            float brightness = getActivity().getWindow().getAttributes().screenBrightness;
+            if (brightness < 0) {
+                try {
+                    brightness = Settings.System.getInt(getContext().getContentResolver(), Settings.System.SCREEN_BRIGHTNESS) / 255f;
+                } catch (Settings.SettingNotFoundException e) {
+                    brightness = 0.5f;
+                }
+            }
+            JSObject r = new JSObject();
+            r.put("volume", max > 0 ? audio.getStreamVolume(AudioManager.STREAM_MUSIC) / (float) max : 0);
+            r.put("volumeSteps", max);
+            r.put("brightness", Math.min(1f, brightness));
+            call.resolve(r);
+        });
+    }
+
+    /** kind "volume" sets the system media volume; "brightness" this window's (-1 = back to the system's). */
+    @PluginMethod
+    public void setLevel(PluginCall call) {
+        String kind = call.getString("kind", "volume");
+        float v = call.getFloat("value", 0f);
+        onUi(call, () -> {
+            if ("brightness".equals(kind)) {
+                setBrightness(isTv() ? 1f : v < 0 ? -1f : Math.max(0.01f, Math.min(1f, v)));
+            } else {
+                AudioManager audio = (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
+                int max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+                audio.setStreamVolume(AudioManager.STREAM_MUSIC, Math.round(Math.max(0f, Math.min(1f, v)) * max), 0);
+            }
+        });
+    }
+
+    private void setBrightness(float v) {
+        Window w = getActivity().getWindow();
+        WindowManager.LayoutParams lp = w.getAttributes();
+        lp.screenBrightness = v;
+        w.setAttributes(lp);
+    }
+
+    @PluginMethod
+    public void enterPip(PluginCall call) {
+        if (!pipSupported()) {
+            call.reject("Imagen en imagen no está disponible en este equipo");
+            return;
+        }
+        getActivity().runOnUiThread(() -> {
+            VideoSize size = player.getVideoSize();
+            Rational ratio = size.width > 0 && size.height > 0 ? new Rational(size.width, size.height) : new Rational(16, 9);
+            // Android only accepts ratios between 1:2.39 and 2.39:1.
+            float f = ratio.floatValue();
+            if (f > 2.39f || f < 1 / 2.39f) ratio = new Rational(16, 9);
+            try {
+                getActivity().enterPictureInPictureMode(new PictureInPictureParams.Builder().setAspectRatio(ratio).build());
+                call.resolve();
+            } catch (IllegalStateException e) {
+                call.reject(e.getMessage());
+            }
+        });
+    }
+
+    void onPip(boolean on, boolean dismissed) {
+        // Swiping the floating window away ends the picture, as in any video app.
+        if (dismissed && player != null) player.pause();
+        JSObject data = new JSObject();
+        data.put("on", on);
+        notifyListeners("pip", data);
+    }
+
     @PluginMethod
     public void syncLibrary(PluginCall call) {
         JSArray favorites = call.getArray("favorites", new JSArray());
@@ -157,8 +261,7 @@ public class WeaPlayerPlugin extends Plugin {
     protected void handleOnStop() {
         super.handleOnStop();
         // On a TV, leaving the app must stop the picture; on phones audio may keep playing in background.
-        UiModeManager ui = (UiModeManager) getContext().getSystemService(Context.UI_MODE_SERVICE);
-        if (player != null && ui != null && ui.getCurrentModeType() == Configuration.UI_MODE_TYPE_TELEVISION) player.pause();
+        if (player != null && isTv()) player.pause();
     }
 
     private void onUi(PluginCall call, Runnable r) {
